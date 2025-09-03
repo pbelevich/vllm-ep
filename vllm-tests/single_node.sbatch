@@ -44,66 +44,70 @@ export NCCL_DEBUG=INFO
 declare -a ARGS=(
     --container-image $IMAGE
     --container-mount-home
+    --container-mounts /fsx/ubuntu/vLLM-testing:/workspace
     --container-env HF_TOKEN
     --container-env VLLM_ALL2ALL_BACKEND
     --container-env VLLM_USE_DEEP_GEMM
 )
 
-# ISL/OSL combinations to test
-declare -a ISL_OSL_PAIRS=(
-    "128 128"
-    "128 2048"
-    "128 4096"
-    "500 2000"
-    "1024 2048"
-    "2048 128"
-    "2048 2048"
-    "5000 500"
-    "20000 2000"
-)
+# Start vLLM server and run benchmarks in single srun
+echo "Starting vLLM server and benchmarks..."
+srun "${ARGS[@]}" bash -c "
+    cd /workspace
 
-# Model
-export MODEL="deepseek-ai/deepseek-moe-16b-base"
-export TP=1
-export DP=4
+    # ISL/OSL combinations to test
+    declare -a ISL_OSL_PAIRS=(
+        \"128 128\"
+        \"128 2048\"
+        \"128 4096\"
+        \"500 2000\"
+        \"1024 2048\"
+        \"2048 128\"
+        \"2048 2048\"
+        \"5000 500\"
+        \"20000 2000\"
+    )
 
-# Start vLLM server in background
-echo "Starting vLLM server..."
-srun "${ARGS[@]}" \
-    vllm serve $MODEL \
-    --trust-remote-code \
-    --tensor-parallel-size $TP \
-    --data-parallel-size $DP \
-    --enable-expert-parallel \
-    --host 0.0.0.0 \
-    --port 8000 &
+    # Model
+    export MODEL=\"deepseek-ai/deepseek-moe-16b-base\"
+    export TP=1
+    export DP=4
 
-SERVER_PID=$!
-# Wait for server to start
-echo "Waiting for server to start..."
-for i in {1..120}; do
-    if curl -s http://localhost:8000/v1/models > /dev/null 2>&1; then
-        echo "[SLURM INFO] Server started successfully."
-        break
-    fi
-    sleep 5
-done
-
-# Run benchmarks for each ISL/OSL combination
-for pair in "${ISL_OSL_PAIRS[@]}"; do
-    read -r isl osl <<< "$pair"
-    echo "Testing ISL=$isl, OSL=$osl"
+    # Start server in background
+    vllm serve \$MODEL \
+        --trust-remote-code \
+        --tensor-parallel-size \$TP \
+        --data-parallel-size \$DP \
+        --enable-expert-parallel \
+        --host 0.0.0.0 \
+        --port 8000 &
     
-    srun "${ARGS[@]}" --cpu-bind=none \
-        vllm bench serve \
-        --model $MODEL \
-        --dataset-name random \
-        --random-input-len $isl \
-        --random-output-len $osl \
-        --num-prompts 1000 \
-        --ignore-eos \
-        > logs_single_node/results_${isl}_${osl}_${SLURM_JOB_ID}.txt 2>&1
-done
+    SERVER_PID=\$!
+    # Wait for server
+    for i in {1..120}; do
+        if curl -s http://localhost:8000/v1/models > /dev/null 2>&1; then
+            echo 'Server ready'
+            break
+        fi
+        sleep 5
+    done
 
-# Clean up
-kill $SERVER_PID
+    # Run benchmarks
+    for pair in \"\${ISL_OSL_PAIRS[@]}\"; do
+        read -r isl osl <<< \"\$pair\"
+        echo \"Testing ISL=\$isl, OSL=\$osl\"
+        
+        vllm bench serve \
+            --model \$MODEL \
+            --dataset-name random \
+            --random-input-len \$isl \
+            --random-output-len \$osl \
+            --num-prompts 1000 \
+            --ignore-eos \
+            --trust-remote-code \
+            > logs_single_node/results_\${isl}_\${osl}_${SLURM_JOB_ID}.txt 2>&1
+    done
+    
+    # Cleanup
+    kill \$SERVER_PID
+"
