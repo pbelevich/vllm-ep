@@ -42,20 +42,16 @@ docker run --gpus all -it --rm \
     --data-parallel-size 4 \
     --enable-expert-parallel 
 ```
-You can also use enroot:
+
+Then, in a different terminal, run
 ```
-enroot import -o ${SQUASH_FILE} dockerd://{IMAGE}
-enroot start --rw \
-    --mount "$HF_HOME":/root/.cache/huggingface \
-    --env "HF_TOKEN=$HF_TOKEN" \
-    --env VLLM_ALL2ALL_BACKEND=pplx \
-    --env VLLM_USE_DEEP_GEMM=1 \
-    ${SQUASH_FILE} \
-    vllm serve deepseek-ai/deepseek-moe-16b-base \
-    --trust-remote-code
-    --tensor-parallel-size 1 \
-    --data-parallel-size 4 \
-    --enable-expert-parallel \
-    --host 0.0.0.0 \
-    --port 8000
+docker exec -it 333eeb898258 bash
+# In container:
+vllm bench serve \
+    --model deepseek-ai/deepseek-moe-16b-base \            
+    --dataset-name random \
+    --random-input-len 128 \
+    --random-output-len 128 \
+    --num-prompts 10000 \
+    --ignore-eos
 ```
