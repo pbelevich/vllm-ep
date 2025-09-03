@@ -55,3 +55,11 @@ vllm bench serve \
     --num-prompts 10000 \
     --ignore-eos
 ```
+
+To submit as sbatch, use the `single_node.sbatch` file in the parent directory:
+```
+# Set HF_TOKEN and HF_HOME as env vars first. Then:
+sbatch single_node.sbatch
+```
+
+Logs and results will be written to a `logs_single_node` directory  
