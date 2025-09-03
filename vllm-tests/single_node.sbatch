@@ -5,8 +5,7 @@
 
 #SBATCH --job-name=vllm-ep-single-node
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node 4
-###SBATCH --gpus-per-node=4
+#SBATCH --ntasks-per-node=1 
 #SBATCH --output logs_single_node/%x_%j.out
 #SBATCH --error logs_single_node/%x_%j.err
 #SBATCH --exclusive=topo
@@ -70,7 +69,7 @@ export DP=4
 
 # Start vLLM server in background
 echo "Starting vLLM server..."
-srun "${ARGS[@]}" --cpu-bind=none \
+srun "${ARGS[@]}" \
     vllm serve $MODEL \
     --trust-remote-code \
     --tensor-parallel-size $TP \
@@ -83,7 +82,7 @@ SERVER_PID=$!
 # Wait for server to start
 echo "Waiting for server to start..."
 for i in {1..120}; do
-    if curl -s http://localhost:8000/v1/models > /dev/null 2&>1; then
+    if curl -s http://localhost:8000/v1/models > /dev/null 2>&1; then
         echo "[SLURM INFO] Server started successfully."
         break
     fi
@@ -103,7 +102,7 @@ for pair in "${ISL_OSL_PAIRS[@]}"; do
         --random-output-len $osl \
         --num-prompts 1000 \
         --ignore-eos \
-        > logs_single_node/results_${isl}_${osl}.txt 2>&1
+        > logs_single_node/results_${isl}_${osl}_${SLURM_JOB_ID}.txt 2>&1
 done
 
 # Clean up
