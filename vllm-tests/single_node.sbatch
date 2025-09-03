@@ -82,12 +82,12 @@ srun "${ARGS[@]}" --cpu-bind=none \
 SERVER_PID=$!
 # Wait for server to start
 echo "Waiting for server to start..."
-for i in {1..60}; do
-    if curl -s http://localhost:8000/health > /dev/null; then
+for i in {1..120}; do
+    if curl -s http://localhost:8000/v1/models > /dev/null 2&>1; then
         echo "[SLURM INFO] Server started successfully."
         break
     fi
-    sleep 2
+    sleep 5
 done
 
 # Run benchmarks for each ISL/OSL combination
