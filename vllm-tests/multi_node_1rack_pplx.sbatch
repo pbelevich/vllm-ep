@@ -52,6 +52,7 @@ declare -a ARGS=(
     --container-image $IMAGE
     --container-mount-home
     --container-mounts /fsx/ubuntu/vLLM-testing:/workspace
+    --container-mounts /dev/urandom:/dev/urandom
     --container-env HF_TOKEN
     --container-env VLLM_ALL2ALL_BACKEND
     --container-env VLLM_USE_DEEP_GEMM
@@ -134,7 +135,7 @@ for i in "${!WORKER_NODES[@]}"; do
     echo "Starting worker node $((i+1))/$((18-1)) ($NODE)"
     START_RANK=$(( (i+1) * 4 ))
 
-    srun --nodes=1 --ntasks=1 --nodelist $NODE "${ARGS[@]}" bash -c "
+    srun --nodes=1 --ntasks=1 --nodelist $NODE "${ARGS[@]}" --container-env START_RANK=$START_RANK bash -c "
         cd /workspace
         vllm serve \$MODEL \
             --trust-remote-code \
@@ -142,7 +143,7 @@ for i in "${!WORKER_NODES[@]}"; do
             --enable-expert-parallel \
             --data-parallel-size \$DP_TOTAL \
             --data-parallel-size-local \$DP_NODE \
-            --data-parallel-start-rank $START_RANK \
+            --data-parallel-start-rank \$START_RANK \
             --data-parallel-address $PRIMARY_IP \
             --data-parallel-rpc-port 13345 \
             --headless
