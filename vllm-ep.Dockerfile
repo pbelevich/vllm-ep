@@ -159,7 +159,7 @@ RUN cd /nvshmem_src \
     -DCMAKE_INSTALL_PREFIX=/opt/nvshmem \
     \
     -DCUDA_HOME=/usr/local/cuda \
-    -DCMAKE_CUDA_ARCHITECTURES=90a \
+    -DCMAKE_CUDA_ARCHITECTURES="90a;100" \
     \
     -DNVSHMEM_USE_GDRCOPY=1 \
     -DGDRCOPY_HOME=/opt/gdrcopy \
@@ -199,15 +199,35 @@ ENV LD_LIBRARY_PATH=/opt/nvshmem/lib:$LD_LIBRARY_PATH
 
 RUN command -v python >/dev/null 2>&1 || ln -s "$(command -v python3)" /usr/bin/python
 
+################################ venv ########################################
+
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+################################ extra packages ########################################
+
+RUN pip install ninja numpy cmake pytest blobfile
+
+################################ PyTorch ########################################
+
+ARG TORCH_VERSION=2.7.1
+
+RUN pip install torch==${TORCH_VERSION} --index-url https://download.pytorch.org/whl/cu128
+
 ################################ vLLM ########################################
 
 ARG VLLM_VERSION=0.10.1.1
 
-RUN pip install vllm==${VLLM_VERSION}
+# RUN pip install vllm==${VLLM_VERSION}
 
-################################ extra packages ########################################
+RUN git clone https://github.com/vllm-project/vllm.git /vllm \
+    && cd /vllm \
+    && git checkout v${VLLM_VERSION} \
+    && python use_existing_torch.py \
+    && pip install -r requirements/build.txt \
+    && pip install --no-build-isolation -e .
 
-RUN pip install ninja numpy cmake pytest
+################################ flashInfer and flash-attn ########################################
 
 RUN pip install flashinfer-python
 
@@ -226,7 +246,7 @@ RUN git clone https://github.com/ppl-ai/pplx-kernels.git /pplx-kernels \
 # COPY pplx-kernels /pplx-kernels
 
 RUN cd /pplx-kernels \
-    && TORCH_CUDA_ARCH_LIST=9.0a+PTX python3 setup.py bdist_wheel \
+    && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0" python3 setup.py bdist_wheel \
     && pip install dist/*.whl
 
 ENV PYTHONPATH=/pplx-kernels
@@ -250,4 +270,4 @@ ARG DEEPEP_COMMIT=c18eabdebf1381978ff884d278f6083a6153be3f
 RUN git clone https://github.com/deepseek-ai/DeepEP.git /DeepEP \
     && cd /DeepEP \
     && git checkout ${DEEPEP_COMMIT} \
-    && pip install .
+    && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0" pip install .
