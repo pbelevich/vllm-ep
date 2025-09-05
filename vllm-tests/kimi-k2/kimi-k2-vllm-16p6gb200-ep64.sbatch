@@ -5,7 +5,8 @@
 
 set -x
 
-export MODEL_NAME=/fsx/ubuntu/.cache/huggingface/hub/models--moonshotai--Kimi-K2-Instruct/snapshots/c52f808f632c07eb8361388616b1d04749373a94
+export MODEL_NAME=moonshotai/Kimi-K2-Instruct
+export MODEL_PATH=`python -c "from pathlib import Path; from huggingface_hub import hf_hub_download; print(Path(hf_hub_download('$MODEL_NAME', filename='config.json')).parent)"`
 
 export MASTER_IP=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
 export PORT=13579
@@ -16,10 +17,10 @@ srun -l \
     --container-mounts=${HF_HOME}:${HF_HOME} \
     bash -c 'set -x; 
     [ "$SLURM_PROCID" -eq 0 ] && EXTRA_FLAGS="" || EXTRA_FLAGS="--headless --data-parallel-start-rank $((4 * SLURM_PROCID))";
-vllm serve $MODEL_NAME \
+vllm serve $MODEL_PATH \
     $EXTRA_FLAGS \
     --port 8000 \
-    --served-model-name kimi-k2 \
+    --served-model-name $MODEL_NAME \
     --trust-remote-code \
     --data-parallel-size 64 \
     --data-parallel-size-local 4 \
