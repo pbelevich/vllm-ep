@@ -23,38 +23,6 @@ For this section, we will benchmark:
 
 We will not benchmark with the Expert Parallel load Balancer (EPLB). We will also not test Disaggregated Serving for this run. 
 
-## Test 1
-
-To run interactive test:
-```bash
-docker pull 159553542841.dkr.ecr.us-east-1.amazonaws.com/belevich/vllm-ep:latest
-
-docker run --gpus all -it --rm \
-    -v "$HF_HOME":/root/.cache/huggingface \
-    -e "HF_TOKEN=$HF_TOKEN" \
-    -e VLLM_ALL2ALL_BACKEND=pplx \
-    -e VLLM_USE_DEEP_GEMM=1 \
-    -p 8000:8000 \
-    --ipc=host \
-    ${IMAGE} \
-    vllm serve deepseek-ai/deepseek-moe-16b-base --trust-remote-code \
-    --tensor-parallel-size 1 \
-    --data-parallel-size 4 \
-    --enable-expert-parallel 
-```
-
-Then, in a different terminal, run
-```
-docker exec -it 333eeb898258 bash
-# In container:
-vllm bench serve \
-    --model deepseek-ai/deepseek-moe-16b-base \            
-    --dataset-name random \
-    --random-input-len 128 \
-    --random-output-len 128 \
-    --num-prompts 10000 \
-    --ignore-eos
-```
 
 To submit as sbatch, use the `single_node.sbatch` file in the parent directory:
 ```
@@ -63,3 +31,9 @@ sbatch single_node.sbatch
 ```
 
 Logs and results will be written to a `logs_single_node` directory  
+
+## Takeaways
+1. pplx as a backend doesn't work! This is being worked on it looks like: https://github.com/vllm-project/vllm/issues/24272, https://github.com/perplexityai/pplx-kernels/issues/36
+2. deepep also doesn't work! https://github.com/deepseek-ai/DeepEP/issues/392
+3. For vLLM -- use the native backend.
+4. Also, recommend that you use NCCL, instead of NVSHMEM. There is no reason to use NVSHMEM.
