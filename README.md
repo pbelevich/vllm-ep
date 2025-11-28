@@ -1,48 +1,43 @@
 # vLLM Expert Parallel Deployment
 
-https://docs.vllm.ai/en/latest/serving/expert_parallel_deployment.html
+https://docs.vllm.ai/en/stable/serving/expert_parallel_deployment.html
 
-1. Download NVSHMEM
-```bash
-wget https://developer.download.nvidia.com/compute/redist/nvshmem/3.3.9/source/nvshmem_src_cuda12-all-all-3.3.9.tar.gz && tar -xvf nvshmem_src_cuda12-all-all-3.3.9.tar.gz
-```
-2. Set environment variables
+## Set environment variables
 ```bash
 GDRCOPY_VERSION=v2.5.1
-EFA_INSTALLER_VERSION=1.43.2
-AWS_OFI_NCCL_VERSION=v1.16.3
-NCCL_VERSION=v2.27.7-1
-NCCL_TESTS_VERSION=v2.16.9
-NVSHMEM_VERSION=3.3.9
+EFA_INSTALLER_VERSION=1.45.0
+NCCL_VERSION=v2.28.9-1
+NCCL_TESTS_VERSION=v2.17.6
+NVSHMEM_COMMIT=v3.4.5-0
+TORCH_VERSION=2.9.1
+VLLM_VERSION=0.11.2
 PPLX_KERNELS_COMMIT=12cecfda252e4e646417ac263d96e994d476ee5d
-DEEPGEMM_COMMIT=ea9c5d9270226c5dd7a577c212e9ea385f6ef048
-DEEPEP_COMMIT=c18eabdebf1381978ff884d278f6083a6153be3f
-TORCH_VERSION=2.7.1
-VLLM_VERSION=0.10.1.1
-TAG="vllm${VLLM_VERSION}-efa${EFA_INSTALLER_VERSION}-ofi${AWS_OFI_NCCL_VERSION}-nccl${NCCL_VERSION}-tests${NCCL_TESTS_VERSION}-nvshmem${NVSHMEM_VERSION}"
-VLLM_EP_CONTAINER_IMAGE_NAME_TAG="vllm-ep:${TAG}"
+DEEPGEMM_COMMIT=c9f8b34dcdacc20aa746b786f983492c51072870
+DEEPEP_COMMIT=27e8e661857499068275dbaa09e4c15d67d51f81
+PPLX_GARDEN_COMMIT=b3c4b59bab08bfb307ec7809b88a49ba8d53d633
+UCCL_EP_COMMIT=d6f3089ca6ca0a4d353c446820d146c212c68630
+VLLM_EP_CONTAINER_IMAGE_NAME_TAG="vllm-ep:latest"
 ```
-3. Build the container image
+## Build the container image
+Don't build it on the slurm head node, it may kill it. Use `srun` to build it on a compute node.
 ```bash
-docker build --progress=plain -f ./vllm-ep.Dockerfile \
-       --build-arg="EFA_INSTALLER_VERSION=${EFA_INSTALLER_VERSION}" \
-       --build-arg="AWS_OFI_NCCL_VERSION=${AWS_OFI_NCCL_VERSION}" \
-       --build-arg="NCCL_VERSION=${NCCL_VERSION}" \
-       --build-arg="NCCL_TESTS_VERSION=${NCCL_TESTS_VERSION}" \
-       --build-arg="NVSHMEM_VERSION=${NVSHMEM_VERSION}" \
-       --build-arg="PPLX_KERNELS_COMMIT=${PPLX_KERNELS_COMMIT}" \
-       --build-arg="DEEPGEMM_COMMIT=${DEEPGEMM_COMMIT}" \
-       --build-arg="DEEPEP_COMMIT=${DEEPEP_COMMIT}" \
-       --build-arg="VLLM_VERSION=${VLLM_VERSION}" \
-       --build-arg="TORCH_VERSION=${TORCH_VERSION}" \
-       -t ${VLLM_EP_CONTAINER_IMAGE_NAME_TAG} \
-       .
+srun bash -lc "docker build --progress=plain -f ./vllm-ep.Dockerfile \
+  --build-arg=EFA_INSTALLER_VERSION=${EFA_INSTALLER_VERSION} \
+  --build-arg=NCCL_VERSION=${NCCL_VERSION} \
+  --build-arg=NCCL_TESTS_VERSION=${NCCL_TESTS_VERSION} \
+  --build-arg=NVSHMEM_COMMIT=${NVSHMEM_COMMIT} \
+  --build-arg=VLLM_VERSION=${VLLM_VERSION} \
+  --build-arg=TORCH_VERSION=${TORCH_VERSION} \
+  --build-arg=PPLX_KERNELS_COMMIT=${PPLX_KERNELS_COMMIT} \
+  --build-arg=DEEPGEMM_COMMIT=${DEEPGEMM_COMMIT} \
+  --build-arg=DEEPEP_COMMIT=${DEEPEP_COMMIT} \
+  --build-arg=PPLX_GARDEN_COMMIT=${PPLX_GARDEN_COMMIT} \
+  --build-arg=UCCL_EP_COMMIT=${UCCL_EP_COMMIT} \
+  -t ${VLLM_EP_CONTAINER_IMAGE_NAME_TAG} . && \
+  enroot import -o ./vllm-ep.sqsh dockerd://${VLLM_EP_CONTAINER_IMAGE_NAME_TAG}"
 ```
-4. [Optional] Convert the container image to a SquashFS file
-```bash
-enroot import -o ./vllm-ep.sqsh dockerd://${VLLM_EP_CONTAINER_IMAGE_NAME_TAG}
-```
-5. Run the container on a single 8 GPU node
+
+## Run the container on a single 8 GPU node
 ```bash
 docker run --runtime nvidia --gpus all \
     -v "$HF_HOME":/root/.cache/huggingface \
@@ -57,7 +52,7 @@ docker run --runtime nvidia --gpus all \
     --data-parallel-size 8 \
     --enable-expert-parallel
 ```
-6. Expected logs:
+## Expected logs:
 
 FlashInfer Backend:
 ```
@@ -77,7 +72,7 @@ otherwise:
 ```
 [cuda_communicator.py:77] Using naive all2all manager.
 ```
-7. Benchmark
+6. Benchmark
 ```
 vllm bench serve \
     --model deepseek-ai/DeepSeek-R1-0528 \

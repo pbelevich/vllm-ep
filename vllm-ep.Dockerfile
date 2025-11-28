@@ -5,11 +5,10 @@ FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04
 
 ################################ NCCL ########################################
 
-ARG GDRCOPY_VERSION=v2.4.4
-ARG EFA_INSTALLER_VERSION=1.42.0
-ARG AWS_OFI_NCCL_VERSION=v1.16.0
-ARG NCCL_VERSION=v2.27.5-1
-ARG NCCL_TESTS_VERSION=v2.16.4
+ARG GDRCOPY_VERSION=v2.5.1
+ARG EFA_INSTALLER_VERSION=1.45.0
+ARG NCCL_VERSION=v2.28.9-1
+ARG NCCL_TESTS_VERSION=v2.17.6
 
 RUN apt-get update -y && apt-get upgrade -y
 RUN apt-get remove -y --allow-change-held-packages \
@@ -95,27 +94,6 @@ RUN git clone -b ${NCCL_VERSION} https://github.com/NVIDIA/nccl.git  /opt/nccl \
     NVCC_GENCODE="-gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89 -gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100"
 
 ###################################################
-## Install AWS-OFI-NCCL plugin
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y libhwloc-dev
-#Switch from sh to bash to allow parameter expansion
-SHELL ["/bin/bash", "-c"]
-RUN curl -OL https://github.com/aws/aws-ofi-nccl/releases/download/${AWS_OFI_NCCL_VERSION}/aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v}.tar.gz \
-    && tar -xf aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v}.tar.gz \
-    && cd aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v} \
-    && ./configure --prefix=/opt/aws-ofi-nccl/install \
-        --with-mpi=/opt/amazon/openmpi \
-        --with-libfabric=/opt/amazon/efa \
-        --with-cuda=/usr/local/cuda \
-        --enable-platform-aws \
-    && make -j $(nproc) \
-    && make install \
-    && cd .. \
-    && rm -rf aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v} \
-    && rm aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v}.tar.gz
-
-SHELL ["/bin/sh", "-c"]
-
-###################################################
 ## Install NCCL-tests
 RUN git clone -b ${NCCL_TESTS_VERSION} https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests \
     && cd /opt/nccl-tests \
@@ -141,17 +119,33 @@ ENV PMIX_MCA_gds=hash
 ## Set LD_PRELOAD for NCCL library
 ENV LD_PRELOAD=/opt/nccl/build/lib/libnccl.so
 
+################################ Miniconda ########################################
+
+# Install Miniconda to not depend on the base image python
+RUN mkdir -p /opt/miniconda3 \
+    && curl -L https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o /tmp/Miniconda3-latest-Linux-x86_64.sh \
+    && bash /tmp/Miniconda3-latest-Linux-x86_64.sh -b -f -p /opt/miniconda3 \
+    && rm /tmp/Miniconda3-latest-Linux-x86_64.sh \
+    && /opt/miniconda3/bin/conda init bash
+
+ENV PATH="/opt/miniconda3/bin:${PATH}"
+
+RUN python --version
+
 ################################ NVSHMEM ########################################
 
 ENV NVSHMEM_DIR=/opt/nvshmem
 ENV NVSHMEM_HOME=/opt/nvshmem
 
-# wget https://developer.nvidia.com/downloads/assets/secure/nvshmem/nvshmem_src_3.2.5-1.txz && tar -xvf nvshmem_src_3.2.5-1.txz
-# or
-# wget https://developer.download.nvidia.com/compute/redist/nvshmem/3.3.9/source/nvshmem_src_cuda12-all-all-3.3.9.tar.gz && tar -xvf nvshmem_src_cuda12-all-all-3.3.9.tar.gz
-COPY ./nvshmem_src /nvshmem_src
+# 3.2.5-1: wget https://developer.nvidia.com/downloads/assets/secure/nvshmem/nvshmem_src_3.2.5-1.txz && tar -xvf nvshmem_src_3.2.5-1.txz
+# 3.3.9:   wget https://developer.download.nvidia.com/compute/redist/nvshmem/3.3.9/source/nvshmem_src_cuda12-all-all-3.3.9.tar.gz && tar -xvf nvshmem_src_cuda12-all-all-3.3.9.tar.gz
+# 3.4.5-0: git clone https://github.com/NVIDIA/nvshmem.git && cd ./nvshmem && git checkout v3.4.5-0
 
-RUN cd /nvshmem_src \
+ARG NVSHMEM_COMMIT=v3.4.5-0
+
+RUN git clone https://github.com/NVIDIA/nvshmem.git /nvshmem_src \
+    && cd /nvshmem_src \
+    && git checkout ${NVSHMEM_COMMIT} \
     && mkdir -p build \
     && cd build \ 
     && cmake \
@@ -159,7 +153,7 @@ RUN cd /nvshmem_src \
     -DCMAKE_INSTALL_PREFIX=/opt/nvshmem \
     \
     -DCUDA_HOME=/usr/local/cuda \
-    -DCMAKE_CUDA_ARCHITECTURES="90a;100" \
+    -DCMAKE_CUDA_ARCHITECTURES="90a;100a" \
     \
     -DNVSHMEM_USE_GDRCOPY=1 \
     -DGDRCOPY_HOME=/opt/gdrcopy \
@@ -191,32 +185,24 @@ RUN cd /nvshmem_src \
     && make -j$(nproc) \
     && make install
 
-ENV PATH=/opt/nvshmem/bin:$PATH
-ENV LD_LIBRARY_PATH=/opt/nvshmem/lib:$LD_LIBRARY_PATH
-# ENV PATH=/opt/nvshmem/bin:$PATH LD_LIBRARY_PATH=/opt/amazon/pmix/lib:/opt/nvshmem/lib:$LD_LIBRARY_PATH NVSHMEM_REMOTE_TRANSPORT=libfabric NVSHMEM_LIBFABRIC_PROVIDER=efa
+ENV PATH=/opt/nvshmem/bin:$PATH LD_LIBRARY_PATH=/opt/amazon/pmix/lib:/opt/nvshmem/lib:$LD_LIBRARY_PATH NVSHMEM_REMOTE_TRANSPORT=libfabric NVSHMEM_LIBFABRIC_PROVIDER=efa
 
-################################ Python ########################################
-
-RUN command -v python >/dev/null 2>&1 || ln -s "$(command -v python3)" /usr/bin/python
-
-################################ venv ########################################
-
-RUN python3 -m venv /venv
-ENV PATH="/venv/bin:$PATH"
+## Set LD_PRELOAD for NVSHMEM library
+ENV LD_PRELOAD=/opt/nvshmem/lib/libnvshmem_host.so:$LD_PRELOAD
 
 ################################ extra packages ########################################
 
-RUN pip install ninja numpy cmake pytest blobfile
+RUN pip install ninja numpy cmake pytest blobfile datasets
 
 ################################ PyTorch ########################################
 
-ARG TORCH_VERSION=2.7.1
+ARG TORCH_VERSION=2.9.0
 
 RUN pip install torch==${TORCH_VERSION} --index-url https://download.pytorch.org/whl/cu128
 
 ################################ vLLM ########################################
 
-ARG VLLM_VERSION=0.10.1.1
+ARG VLLM_VERSION=0.11.2
 
 # RUN pip install vllm==${VLLM_VERSION}
 
@@ -225,13 +211,11 @@ RUN git clone https://github.com/vllm-project/vllm.git /vllm \
     && git checkout v${VLLM_VERSION} \
     && python use_existing_torch.py \
     && pip install -r requirements/build.txt \
-    && pip install --no-build-isolation -e .
+    && pip install --no-build-isolation -v -e .
 
-################################ flashInfer and flash-attn ########################################
+################################ flashInfer ########################################
 
 RUN pip install flashinfer-python
-
-RUN pip install flash-attn --no-build-isolation
 
 ################################ PPLX-KERNELS ########################################
 
@@ -246,16 +230,16 @@ RUN git clone https://github.com/ppl-ai/pplx-kernels.git /pplx-kernels \
 # COPY pplx-kernels /pplx-kernels
 
 RUN cd /pplx-kernels \
-    && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0" python3 setup.py bdist_wheel \
+    && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0a+PTX" python3 setup.py bdist_wheel \
     && pip install dist/*.whl
 
-ENV PYTHONPATH=/pplx-kernels
+# ENV PYTHONPATH=/pplx-kernels:$PYTHONPATH
 
 ################################ DeepGEMM ########################################
 
 # see: https://github.com/deepseek-ai/DeepGEMM#installation
 
-ARG DEEPGEMM_COMMIT=ea9c5d9270226c5dd7a577c212e9ea385f6ef048
+ARG DEEPGEMM_COMMIT=c9f8b34dcdacc20aa746b786f983492c51072870
 
 RUN git clone https://github.com/deepseek-ai/DeepGEMM.git /DeepGEMM \
     && cd /DeepGEMM \
@@ -265,9 +249,59 @@ RUN git clone https://github.com/deepseek-ai/DeepGEMM.git /DeepGEMM \
 
 ################################ DeepEP ########################################
 
-ARG DEEPEP_COMMIT=c18eabdebf1381978ff884d278f6083a6153be3f
+ARG DEEPEP_COMMIT=27e8e661857499068275dbaa09e4c15d67d51f81
 
-RUN git clone https://github.com/deepseek-ai/DeepEP.git /DeepEP \
+RUN git clone https://github.com/pbelevich/DeepEP.git /DeepEP \
     && cd /DeepEP \
     && git checkout ${DEEPEP_COMMIT} \
-    && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0" pip install .
+    && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0a+PTX" pip install .
+
+################################ Rust ########################################
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.91.0 --component llvm-tools-preview
+ENV PATH="/root/.cargo/bin:$PATH" \
+    CARGO_HOME="/root/.cargo" \
+    RUSTUP_HOME="/root/.rustup"
+
+################################ PPLX Garden ########################################
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libclang-dev \
+    python3-dev \
+    python3-setuptools \
+    python3-pip \
+    python3-build \
+    python3-venv \
+    && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV GDRAPI_HOME=/opt/gdrcopy
+ENV LD_LIBRARY_PATH=/opt/gdrcopy/lib:$LD_LIBRARY_PATH
+
+ARG PPLX_GARDEN_COMMIT=b3c4b59bab08bfb307ec7809b88a49ba8d53d633
+
+RUN git clone https://github.com/perplexityai/pplx-garden.git /pplx-garden \
+    && cd /pplx-garden \
+    && git checkout ${PPLX_GARDEN_COMMIT} \
+    && export TORCH_CMAKE_PREFIX_PATH=$(python3 -c "import torch; print(torch.utils.cmake_prefix_path)") \
+    && python3 -m build --wheel \
+    && python3 -m pip install /pplx-garden/dist/*.whl
+
+# ENV PYTHONPATH=/pplx-garden:$PYTHONPATH
+
+################################ UCCL-EP ########################################
+
+RUN apt-get update && apt-get install -y \
+    sudo \
+    libnuma-dev
+
+ARG UCCL_EP_COMMIT=d6f3089ca6ca0a4d353c446820d146c212c68630
+
+RUN git clone https://github.com/uccl-project/uccl.git /uccl \
+    && cd /uccl \
+    && git checkout ${UCCL_EP_COMMIT} \
+    && cd ep \
+    && ./install_deps.sh \
+    && make -j install
