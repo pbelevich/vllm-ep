@@ -10,4 +10,4 @@ export FI_PROVIDER=efa
 
 mpirun -N 1 bash -c 'echo $(hostname): $(cat /sys/devices/virtual/dmi/id/board_asset_tag | tr -d " ")'
 
-srun --mpi=pmix --cpu-bind=none --container-image ./vllm-ep.sqsh python3 /DeepEP/tests/test_intranode.py
+srun --mpi=pmix --cpu-bind=none --container-image ./vllm-ep.sqsh bash -c 'PYTHONPATH=$(echo /DeepEP/install/lib/python*/site-packages):$PYTHONPATH python3 /DeepEP/tests/test_intranode.py'

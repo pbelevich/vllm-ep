@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH --job-name=intranode
-#SBATCH --nodes=1
+#SBATCH --job-name=low_latency
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node 1
 #SBATCH --exclusive
 #SBATCH --wait-all-nodes=1
@@ -24,8 +24,8 @@ srun -l \
             --rdzv_id=$SLURM_JOB_ID \
             --rdzv_backend=c10d \
             --rdzv_endpoint=$MASTER_ADDR \
-            /uccl/ep/bench/test_intranode.py \
-                --num-tokens 4096 \
-                --hidden 7168 \
-                --num-topk 8 \
-                --num-experts 256'
+            /uccl/ep/bench/test_low_latency.py \
+                --num-tokens=128 \
+                --hidden=7168 \
+                --num-topk=8 \
+                --num-experts=288'

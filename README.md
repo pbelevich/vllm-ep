@@ -10,13 +10,12 @@ NCCL_VERSION=v2.28.9-1
 NCCL_TESTS_VERSION=v2.17.6
 NVSHMEM_COMMIT=v3.4.5-0
 TORCH_VERSION=2.9.1
-VLLM_VERSION=0.11.2
+VLLM_COMMIT=v0.11.2
 PPLX_KERNELS_COMMIT=12cecfda252e4e646417ac263d96e994d476ee5d
-DEEPGEMM_COMMIT=c9f8b34dcdacc20aa746b786f983492c51072870
+DEEPGEMM_COMMIT=38f8ef73a48a42b1a04e0fa839c2341540de26a6
 DEEPEP_COMMIT=27e8e661857499068275dbaa09e4c15d67d51f81
-PPLX_GARDEN_COMMIT=b3c4b59bab08bfb307ec7809b88a49ba8d53d633
-UCCL_EP_COMMIT=d6f3089ca6ca0a4d353c446820d146c212c68630
-VLLM_EP_CONTAINER_IMAGE_NAME_TAG="vllm-ep:latest"
+PPLX_GARDEN_COMMIT=f62aac558ef937340d17091a52011631d0c65147
+UCCL_COMMIT=e4d2b2e00aed5c7b6b7d5f908a579e49ea538048
 ```
 ## Build the container image
 Don't build it on the slurm head node, it may kill it. Use `srun` to build it on a compute node.
@@ -26,15 +25,89 @@ srun bash -lc "docker build --progress=plain -f ./vllm-ep.Dockerfile \
   --build-arg=NCCL_VERSION=${NCCL_VERSION} \
   --build-arg=NCCL_TESTS_VERSION=${NCCL_TESTS_VERSION} \
   --build-arg=NVSHMEM_COMMIT=${NVSHMEM_COMMIT} \
-  --build-arg=VLLM_VERSION=${VLLM_VERSION} \
+  --build-arg=VLLM_COMMIT=${VLLM_COMMIT} \
   --build-arg=TORCH_VERSION=${TORCH_VERSION} \
   --build-arg=PPLX_KERNELS_COMMIT=${PPLX_KERNELS_COMMIT} \
   --build-arg=DEEPGEMM_COMMIT=${DEEPGEMM_COMMIT} \
   --build-arg=DEEPEP_COMMIT=${DEEPEP_COMMIT} \
   --build-arg=PPLX_GARDEN_COMMIT=${PPLX_GARDEN_COMMIT} \
-  --build-arg=UCCL_EP_COMMIT=${UCCL_EP_COMMIT} \
-  -t ${VLLM_EP_CONTAINER_IMAGE_NAME_TAG} . && \
-  enroot import -o ./vllm-ep.sqsh dockerd://${VLLM_EP_CONTAINER_IMAGE_NAME_TAG}"
+  --build-arg=UCCL_COMMIT=${UCCL_COMMIT} \
+  -t vllm-ep:latest . && \
+  enroot import -o ./vllm-ep.sqsh dockerd://vllm-ep:latest"
+```
+
+## NCCL Test
+```bash
+sbatch nccl-test.sbatch
+```
+
+## NVSHMEM Test
+```bash
+sbatch nvshmem-test.sbatch
+```
+
+## DeepEP Tests
+```bash
+sbatch deepep-test_intranode.sbatch
+sbatch deepep-test_internode.sbatch
+sbatch deepep-test_low_latency.sbatch
+```
+
+## PPLX Kernels Test
+```bash
+sbatch pplx-kernels-test.sbatch
+```
+
+## PPLX Garden Test
+```bash
+sbatch pplx-garden-test.sbatch
+```
+
+## UCCL-EP Tests
+```bash
+sbatch uccl-ep-test_intranode.sbatch
+sbatch uccl-ep-test_internode.sbatch
+sbatch uccl-ep-test_low_latency.sbatch
+```
+
+## DeepEP version
+```bash
+srun --container-image ./vllm-ep.sqsh \
+  bash -c 'PYTHONPATH=$(echo /DeepEP/install/lib/python*/site-packages):$PYTHONPATH pip list | grep deep_ep'
+```
+expected output:
+```
+deep_ep                           1.2.1+27e8e66
+```
+## DeepEP UCCL-EP version
+```bash
+srun --container-image ./vllm-ep.sqsh \
+  bash -c 'PYTHONPATH=$(echo /uccl/install/lib/python*/site-packages):$PYTHONPATH pip list | grep deep_ep'
+```
+expected output:
+```
+deep_ep                           0.1.0
+```
+
+## vLLM check for 
+```bash
+srun --container-image ./vllm-ep.sqsh \
+  bash -c 'PYTHONPATH=$(echo /DeepEP/install/lib/python*/site-packages):$PYTHONPATH \
+           python -c "from vllm.utils.import_utils import has_deep_ep, has_deep_gemm, has_pplx; \
+                      print(f\"{has_deep_ep()=}\n{has_deep_gemm()=}\n{has_pplx()=}\")"'
+```
+or
+```bash
+srun --container-image ./vllm-ep.sqsh \
+  bash -c 'PYTHONPATH=$(echo /uccl/install/lib/python*/site-packages):$PYTHONPATH \
+           python -c "from vllm.utils.import_utils import has_deep_ep, has_deep_gemm, has_pplx; \
+                      print(f\"{has_deep_ep()=}\n{has_deep_gemm()=}\n{has_pplx()=}\")"'
+```
+expected output:
+```
+has_deep_ep()=True
+has_deep_gemm()=True
+has_pplx()=True
 ```
 
 ## Run the container on a single 8 GPU node
@@ -46,7 +119,7 @@ docker run --runtime nvidia --gpus all \
     -e VLLM_USE_DEEP_GEMM=1 \
     -p 8000:8000 \
     --ipc=host \
-    ${VLLM_EP_CONTAINER_IMAGE_NAME_TAG} \
+    vllm-ep:latest \
     vllm serve deepseek-ai/DeepSeek-R1-0528 \
     --tensor-parallel-size 1 \
     --data-parallel-size 8 \
