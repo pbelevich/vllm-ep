@@ -304,7 +304,7 @@ RUN ls -la && \
     && cd /uccl \
     && git checkout ${UCCL_COMMIT} \
     && cd ep \
-    && ./install_deps.sh \
+    && apt install -y nvtop libgoogle-glog-dev clang-format-14 python3-pip \
     && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0a+PTX" python setup.py install --prefix=/uccl/install \
     && cd deep_ep_wrapper \
     && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0a+PTX" python setup.py install --prefix=/uccl/install
