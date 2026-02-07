@@ -191,6 +191,8 @@ ENV PATH=/opt/nvshmem/bin:$PATH LD_LIBRARY_PATH=/opt/amazon/pmix/lib:/opt/nvshme
 ## Set LD_PRELOAD for NVSHMEM library
 ENV LD_PRELOAD=/opt/nvshmem/lib/libnvshmem_host.so:$LD_PRELOAD
 
+RUN pip install /opt/nvshmem/lib/python/dist/nvshmem4py_cu12-0.2.1-cp313-cp313-manylinux_2_34_x86_64.whl
+
 ################################ extra packages ########################################
 
 RUN pip install ninja numpy cmake pytest blobfile datasets
@@ -288,6 +290,7 @@ ARG DEEPEP_COMMIT=27e8e661857499068275dbaa09e4c15d67d51f81
 RUN git clone ${DEEPEP_REPO_URL} /DeepEP \
     && cd /DeepEP \
     && git checkout ${DEEPEP_COMMIT} \
+    && sed -ri '/libnvshmem_device\.a/d' setup.py \
     && TORCH_CUDA_ARCH_LIST="9.0a+PTX;10.0a+PTX" python3 setup.py install --prefix=/DeepEP/install
 
 ################################ UCCL-EP ########################################
